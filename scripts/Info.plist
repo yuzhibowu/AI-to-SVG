@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>AI转SVG</string>
+<key>CFBundleDisplayName</key><string>AI转SVG</string>
+<key>CFBundleIdentifier</key><string>local.sticksvg.converter</string>
+<key>CFBundleExecutable</key><string>StickSVG</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.5.4</string>
+<key>CFBundleVersion</key><string>13</string>
+<key>NSAppleEventsUsageDescription</key><string>将主题图标转换为可编辑的 Keynote 文稿，需要允许 AI转SVG 控制 Keynote。</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeName</key><string>Illustrator Artwork</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>CFBundleTypeExtensions</key><array><string>ai</string></array>
+</dict></array>
+</dict></plist>
