@@ -14,6 +14,11 @@ struct StickSVGApp: App {
         .defaultSize(width: 1080, height: 760)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .pasteboard) {
+                Button("从剪贴板导入矢量对象") { model.importClipboard() }
+                    .keyboardShortcut("v", modifiers: [.command, .shift])
+                    .disabled(model.isImporting || model.isExporting)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("导入 AI 素材…") { model.chooseInputs() }.keyboardShortcut("o")
                 Button("导出选中的 SVG…") { model.chooseOutput() }.keyboardShortcut("e", modifiers: [.command, .shift]).disabled(model.selectedCount == 0 || model.isExporting || model.isImporting)

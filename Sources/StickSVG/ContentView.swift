@@ -52,6 +52,10 @@ struct ContentView: View {
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(leaf.opacity(0.24), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
             }.buttonStyle(.plain).disabled(model.isImporting || model.isExporting).padding(18)
 
+            Button(action: model.importClipboard) { Label("从剪贴板导入", systemImage: "doc.on.clipboard") }
+                .buttonStyle(.bordered).frame(maxWidth: .infinity)
+                .disabled(model.isImporting || model.isExporting).padding(.horizontal, 18).padding(.bottom, 18)
+
             HStack {
                 Text("素材").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
@@ -101,31 +105,6 @@ struct ContentView: View {
 
     private var workspace: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(model.activeDocument?.stem ?? "提取你需要的人物").font(.system(size: 24, weight: .bold))
-                    Text(model.activeDocument.map { $0.isAnalyzing ? "正在读取矢量路径…" : "选择要导出的图标，人物与道具一起保存为 SVG。" } ?? "保留人物和道具，不带网站标识和背景。")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                HStack(spacing: 12) {
-                Picker("导出方式", selection: $model.exportLayout) {
-                    ForEach(SVGExportLayout.allCases) { layout in Text(layout.title).tag(layout) }
-                }.labelsHidden().frame(width: 190)
-                    .disabled(model.isExporting || model.isImporting)
-                Button("ZIP 打包", action: model.chooseArchive)
-                    .disabled(model.selectedCount == 0 || model.isExporting || model.isImporting)
-                Button("导出 Keynote", action: model.chooseKeynote)
-                    .disabled(model.selectedCount == 0 || model.isExporting || model.isImporting)
-                    .help("每个主题一页，每个图标一个可编辑形状组")
-                Spacer(minLength: 0)
-                Button(action: model.chooseOutput) {
-                    Label(model.isExporting ? "正在导出…" : "导出 \(model.selectedCount) 个 SVG", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 8)
-                }.buttonStyle(.borderedProminent).disabled(model.selectedCount == 0 || model.isExporting || model.isImporting)
-                }
-            }.padding(.horizontal, 28).padding(.top, 40).padding(.bottom, 24)
-            Divider()
-
             if model.isExporting {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
@@ -182,21 +161,60 @@ struct ContentView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var exportActions: some View {
+        VStack(spacing: 8) {
+                    Button(action: model.chooseKeynote) {
+                        Label("导出 Keynote", systemImage: "rectangle.on.rectangle")
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
+                    Button(action: model.chooseOutput) {
+                        Label(model.isExporting ? "正在导出…" : "导出 \(model.selectedCount) 个 SVG", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
+                    Button { model.copySVG() } label: {
+                        Label(model.isCopyingSVG ? "正在复制…" : "复制 SVG", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }.help("复制所有勾选的 SVG，保留当前调色结果")
+                }.font(.system(size: 12, weight: .semibold))
+                    .buttonStyle(.borderedProminent).tint(leaf).frame(width: 158)
+                    .disabled(model.selectedCount == 0 || model.isExporting || model.isImporting || model.isCopyingSVG)
+    }
+
+    private var selectionControls: some View {
+        HStack(spacing: 8) {
+            Text("\(model.activeDocument?.icons.count ?? 0) 个独立图标").font(.system(size: 12, weight: .medium))
+            Button("全选") { model.selectCurrent(true) }.buttonStyle(.link).font(.system(size: 11))
+            Button("取消选择") { model.selectCurrent(false) }.buttonStyle(.link).font(.system(size: 11))
+            Menu("修正识别") {
+                Button("补选人物…") { openEditor(.add) }
+                Button("合并当前所选图标") { model.mergeCurrent() }.disabled(model.currentSelectedCount < 2)
+                Button("撤销上次修改") { model.undoEdit() }.disabled(!model.canUndo)
+            }.fixedSize().padding(.leading, 8)
+        }.fixedSize().disabled(model.isImporting || model.isExporting)
+    }
+
+    private var exportOptions: some View {
+        HStack(spacing: 10) {
+            Picker("导出方式", selection: $model.exportLayout) {
+                ForEach(SVGExportLayout.allCases) { layout in Text(layout.title).tag(layout) }
+            }.labelsHidden().frame(width: 180)
+                .disabled(model.isExporting || model.isImporting)
+            Button("ZIP 打包", action: model.chooseArchive)
+                .disabled(model.selectedCount == 0 || model.isExporting || model.isImporting)
+        }
+    }
+
     private var controls: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Text("\(model.activeDocument?.icons.count ?? 0) 个独立图标").font(.system(size: 12, weight: .medium))
-                Button("全选") { model.selectCurrent(true) }.buttonStyle(.link).font(.system(size: 11))
-                Button("取消选择") { model.selectCurrent(false) }.buttonStyle(.link).font(.system(size: 11))
-                Spacer()
-                Menu("修正识别") {
-                    Button("补选人物…") { openEditor(.add) }
-                    Button("合并当前所选图标") { model.mergeCurrent() }.disabled(model.currentSelectedCount < 2)
-                    Button("撤销上次修改") { model.undoEdit() }.disabled(!model.canUndo)
-                }.fixedSize()
-            }.disabled(model.isImporting || model.isExporting)
-            ColorPalette(model: model)
-        }.padding(.horizontal, 26).padding(.vertical, 14)
+        HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 18) { selectionControls; exportOptions }
+                    VStack(alignment: .leading, spacing: 12) { selectionControls; exportOptions }
+                }
+                ColorPalette(model: model)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            exportActions
+        }.padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 4)
     }
 
     private func openEditor(_ mode: EditorMode) {
@@ -224,6 +242,8 @@ struct ContentView: View {
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
         .contextMenu {
+            Button("复制 SVG") { model.copySVG(icon) }.disabled(model.isCopyingSVG)
+            Divider()
             Button("编辑人物路径…") { openEditor(.edit(icon.id)) }
             Button("拆分图标…") { openEditor(.split(icon.id)) }.disabled(icon.shapes.count < 2)
             Divider()
@@ -262,7 +282,7 @@ struct ContentView: View {
             Text(model.notice ?? "棋盘格仅用于预览，导出的 SVG 没有背景。")
                 .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
             Spacer()
-            if model.exportLocation != nil { Button("在 Finder 中查看", action: model.revealOutput).font(.system(size: 11)) }
+            if model.canRevealOutput { Button("在 Finder 中查看", action: model.revealOutput).font(.system(size: 11)) }
         }.padding(.horizontal, 26).padding(.vertical, 15).background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     }
 

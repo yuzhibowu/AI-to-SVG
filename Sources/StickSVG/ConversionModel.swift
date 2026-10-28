@@ -43,6 +43,7 @@ final class ConversionModel: ObservableObject {
     @Published var exportLayout: SVGExportLayout = .flat
     @Published var isImporting = false
     @Published var isExporting = false
+    @Published var isCopyingSVG = false
     @Published var exportProgress = 0.0
     @Published var exportCompleted = 0
     @Published var exportTotal = 0
@@ -65,11 +66,13 @@ final class ConversionModel: ObservableObject {
     var activeDocument: InputDocument? { documents.first { $0.id == activeDocumentID } }
     var selectedCount: Int { documents.flatMap(\.icons).filter { selectedIcons.contains($0.id) }.count }
     var iconCount: Int { documents.flatMap(\.icons).count }
+    var canRevealOutput: Bool { exportLocation.map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
     var canUndo: Bool { !editHistory.isEmpty }
     var currentSelectedCount: Int { activeDocument?.icons.filter { selectedIcons.contains($0.id) }.count ?? 0 }
 
     func clearDocuments() {
         guard !isImporting, !isExporting else { return }
+        exportLocation = nil
         documents.removeAll()
         selectedIcons.removeAll()
         activeDocumentID = nil
@@ -89,6 +92,36 @@ final class ConversionModel: ObservableObject {
         if panel.runModal() == .OK { importFiles(panel.urls) }
     }
 
+    func importClipboard() {
+        guard !isImporting, !isExporting else { return }
+        let pasteboard = NSPasteboard.general
+        let apple = pasteboard.data(forType: NSPasteboard.PasteboardType(ClipboardVectorParser.appleType))
+        let pdf = pasteboard.data(forType: .pdf)
+        guard let data = apple ?? pdf else {
+            fail("剪贴板中没有可读取的矢量对象。请在 Keynote 或无边记中复制形状再粘贴；当前不把图片预览冒充矢量路径。")
+            return
+        }
+        exportLocation = nil
+        isImporting = true; progress = 0; currentFile = "剪贴板对象"
+        importTask = Task {
+            defer { isImporting = false; currentFile = "" }
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try apple != nil ? ClipboardVectorParser.parseApple(data) : ClipboardVectorParser.parsePDF(data) }
+            }.value
+            switch result {
+            case .success(let icons):
+                let name = "剪贴板-" + DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium).replacingOccurrences(of: ":", with: "-")
+                let url = URL(fileURLWithPath: "/剪贴板/" + name + ".svg")
+                var document = InputDocument(url: url)
+                document.icons = icons; document.shapes = icons.flatMap(\.shapes); document.isAnalyzing = false
+                documents.append(document); activeDocumentID = document.id
+                selectedIcons.formUnion(icons.map(\.id)); progress = 1
+                notice = "已从剪贴板导入 \(icons.count) 个矢量对象，可预览、调色并导出 SVG。"
+            case .failure(let error): fail(error.localizedDescription)
+            }
+        }
+    }
+
     func loadExample() {
         if let url = Bundle.main.url(forResource: "p0941", withExtension: "ai", subdirectory: "Samples") {
             importFiles([url])
@@ -101,6 +134,7 @@ final class ConversionModel: ObservableObject {
 
     func importFiles(_ roots: [URL]) {
         guard !isImporting, !isExporting else { notice = "正在处理素材，请稍后继续添加。"; return }
+        exportLocation = nil
         isImporting = true; notice = nil; progress = 0
         let existing = Set(documents.map { $0.url.resolvingSymlinksInPath().path })
         importTask = Task {
@@ -260,6 +294,52 @@ final class ConversionModel: ObservableObject {
         if panel.runModal() == .OK, let url = panel.url { export(to: url, archive: true) }
     }
 
+    func copySVG(_ onlyIcon: Pictogram? = nil) {
+        guard !isCopyingSVG, !isImporting, !isExporting else { return }
+        let entries = documents.sorted { $0.stem.localizedStandardCompare($1.stem) == .orderedAscending }.flatMap { document in
+            document.icons.sorted { $0.number < $1.number }.filter { candidate in
+                onlyIcon.map { icon in icon.id == candidate.id } ?? selectedIcons.contains(candidate.id)
+            }.map { (String(format: "%@-%02d.svg", document.stem, $0.number), $0) }
+        }
+        guard !entries.isEmpty else { return }
+        let color = exportColor
+        isCopyingSVG = true; notice = "正在准备复制 \(entries.count) 个 SVG…"
+        Task {
+            defer { isCopyingSVG = false }
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { () -> [(String, URL)] in
+                    let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                        .appendingPathComponent("local.sticksvg.converter/ClipboardSVG/" + UUID().uuidString, isDirectory: true)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    do {
+                        return try entries.enumerated().map { index, entry in
+                            let svg = entry.1.svg(color: color)
+                            let safeName = entry.0.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+                            let file = directory.appendingPathComponent(String(format: "%04d-", index+1) + safeName)
+                            try svg.write(to: file, atomically: true, encoding: .utf8)
+                            return (svg, file)
+                        }
+                    } catch { try? FileManager.default.removeItem(at: directory); throw error }
+                }
+            }.value
+            switch result {
+            case .success(let entries):
+                let items = entries.map { svg, file -> NSPasteboardItem in
+                    let item = NSPasteboardItem()
+                    item.setData(Data(svg.utf8), forType: NSPasteboard.PasteboardType(UTType.svg.identifier))
+                    item.setString(svg, forType: .string)
+                    item.setString(file.absoluteString, forType: .fileURL)
+                    return item
+                }
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                if pasteboard.writeObjects(items) { notice = "已复制 \(items.count) 个 SVG 到剪贴板，保留当前颜色与矢量路径。" }
+                else { fail("无法写入剪贴板，请重试。") }
+            case .failure(let error): fail("复制 SVG 失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
     func chooseOutput() {
         guard selectedCount > 0, !isExporting, !isImporting else { return }
         let panel = NSOpenPanel()
@@ -289,7 +369,7 @@ final class ConversionModel: ObservableObject {
         let layout = exportLayout
         let runID = UUID()
         exportRunID = runID
-        isExporting = true; notice = nil
+        isExporting = true; notice = nil; exportLocation = nil
         exportProgress = 0; exportCompleted = 0
         exportTotal = jobs.reduce(0) { $0 + $1.icons.count }
         exportCurrentFile = ""; exportPhase = "导出 SVG"; keynoteWaitStarted = nil
@@ -335,7 +415,7 @@ final class ConversionModel: ObservableObject {
     }
 
     func revealOutput() {
-        if let url = exportLocation {
+        if let url = exportLocation, canRevealOutput {
             if ["zip", "key", "pptx"].contains(url.pathExtension.lowercased()) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             else { NSWorkspace.shared.open(url) }
         }

@@ -4,6 +4,40 @@ import CoreGraphics
 @testable import VectorEngine
 
 final class VectorEngineTests: XCTestCase {
+    private func clipboardShape(x: Double, white: Bool = false) -> [String: Any] {
+        ["shape": ["geometry": ["position": ["x": x, "y": 20], "size": ["width": 10, "height": 10]],
+                   "stroke": "empty", "head": "none", "tail": "none",
+                   "path": ["bezier": ["path": "M 0 0 L 10 0 L 10 10 L 0 10 Z M 0 0"]],
+                   "fill": ["color": ["rgba": ["red": 1, "green": white ? 1 : 0.5, "blue": white ? 1 : 0, "alpha": 1]]]]]
+    }
+    func testClipboardPreservesGroupPositionsAndWhitePaint() throws {
+        let data = try JSONSerialization.data(withJSONObject: [["children": [clipboardShape(x: 100), clipboardShape(x: 120, white: true)]]])
+        let icons = try ClipboardVectorParser.parseApple(data)
+        XCTAssertEqual(icons.count, 1)
+        XCTAssertEqual(icons[0].shapes.count, 2)
+        XCTAssertEqual(icons[0].bounds, CGRect(x: 100, y: 20, width: 30, height: 10))
+        let svg = icons[0].svg()
+        XCTAssertTrue(svg.contains("rgb(255,255,255)"))
+        XCTAssertFalse(svg.contains("<mask"))
+        XCTAssertFalse(svg.contains("<image"))
+        XCTAssertEqual(PresentationExporter.editableShapes(icons[0]).count, 2)
+    }
+    func testClipboardMultipleTopLevelObjectsAndAtomicFailure() throws {
+        let objects = [clipboardShape(x: 0), clipboardShape(x: 100)]
+        XCTAssertEqual(try ClipboardVectorParser.parseApple(JSONSerialization.data(withJSONObject: objects)).count, 2)
+        var bad = clipboardShape(x: 200)
+        var shape = bad["shape"] as! [String: Any]
+        shape["stroke"] = ["width": 2]; bad["shape"] = shape
+        XCTAssertThrowsError(try ClipboardVectorParser.parseApple(JSONSerialization.data(withJSONObject: objects + [bad])))
+    }
+    func testClipboardBezierAndMalformedPath() throws {
+        let path = try ClipboardVectorParser.parsePath("M 0 0 C 1 2 3 4 10 10 L 0 10 Z")
+        XCTAssertFalse(path.isEmpty)
+        XCTAssertThrowsError(try ClipboardVectorParser.parsePath("M 0 0 C 1 2"))
+        XCTAssertThrowsError(try ClipboardVectorParser.parsePath("M 0 0 ! L 10 10"))
+        XCTAssertThrowsError(try ClipboardVectorParser.parsePath("M 0 0 A 1 2 3 4 5 6 7"))
+    }
+
     func testLargePresentationRetainsAll1041TopicsAndEditableIcons() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

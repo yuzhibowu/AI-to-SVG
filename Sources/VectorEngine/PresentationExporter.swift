@@ -20,13 +20,13 @@ public enum PresentationExporter {
         var painted: [VectorShape] = []
         for shape in icon.shapes.sorted(by: { $0.id < $1.id }) {
             let path = shape.path.normalized(using: shape.evenOdd ? .evenOdd : .winding)
-            if shape.ink.isNearlyWhite {
+            if shape.whiteIsKnockout && shape.ink.isNearlyWhite {
                 painted = painted.compactMap { previous in
                     guard previous.bounds.intersects(shape.bounds) else { return previous }
                     let cut = previous.path.subtracting(path, using: .winding)
-                    return cut.isEmpty ? nil : VectorShape(id: previous.id, path: cut, ink: previous.ink)
+                    return cut.isEmpty ? nil : VectorShape(id: previous.id, path: cut, ink: previous.ink, whiteIsKnockout: previous.whiteIsKnockout)
                 }
-            } else { painted.append(VectorShape(id: shape.id, path: path, ink: shape.ink)) }
+            } else { painted.append(VectorShape(id: shape.id, path: path, ink: shape.ink, whiteIsKnockout: shape.whiteIsKnockout)) }
         }
         return painted
     }

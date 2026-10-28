@@ -20,7 +20,8 @@ struct ColorPalette: View {
                             .overlay(Circle().stroke(model.exportColor.hex == hex ? Color.accentColor : .clear, lineWidth: 2))
                     }.buttonStyle(.plain).help(name).accessibilityLabel("改为" + name)
                 }
-                Spacer(minLength: 4)
+            }
+            HStack(spacing: 10) {
                 ColorPicker("自选颜色", selection: Binding(get: { color(model.exportColor.hex ?? hexDraft) }, set: { value in
                     guard let rgb = NSColor(value).usingColorSpace(.sRGB) else { return }
                     model.setHexColor(String(format: "#%02X%02X%02X", Int((rgb.redComponent*255).rounded()), Int((rgb.greenComponent*255).rounded()), Int((rgb.blueComponent*255).rounded())))
@@ -29,9 +30,8 @@ struct ColorPalette: View {
                     .onSubmit { model.setHexColor(hexDraft) }.accessibilityLabel("HEX 色值")
                 Button("应用") { model.setHexColor(hexDraft) }.font(.system(size: 11))
             }
-            Text("统一应用到所有素材中勾选的 \(model.selectedCount) 个图标，背景和镂空保持透明。")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
         }
+        .help("调色应用到所有素材中勾选的图标，背景和镂空保持透明。")
         .onAppear { if let hex = model.exportColor.hex { hexDraft = hex } }
         .onChange(of: model.exportColor) { value in if let hex = value.hex { hexDraft = hex } }
         .disabled(model.isExporting)

@@ -36,10 +36,11 @@ public struct VectorShape {
     public let segments: [Segment]
     public let ink: Ink
     public let evenOdd: Bool
+    public let whiteIsKnockout: Bool
     public let path: CGPath
     public let bounds: CGRect
-    public init(id: Int, segments: [Segment], ink: Ink, evenOdd: Bool) {
-        self.id = id; self.segments = segments; self.ink = ink; self.evenOdd = evenOdd
+    public init(id: Int, segments: [Segment], ink: Ink, evenOdd: Bool, whiteIsKnockout: Bool = true) {
+        self.id = id; self.segments = segments; self.ink = ink; self.evenOdd = evenOdd; self.whiteIsKnockout = whiteIsKnockout
         let result = CGMutablePath()
         for segment in segments {
             switch segment {
@@ -75,7 +76,7 @@ public struct VectorShape {
 }
 
 extension VectorShape {
-    init(id: Int, path: CGPath, ink: Ink, evenOdd: Bool = false) {
+    init(id: Int, path: CGPath, ink: Ink, evenOdd: Bool = false, whiteIsKnockout: Bool = true) {
         var segments: [Segment] = []
         var current = CGPoint.zero
         path.applyWithBlock { pointer in
@@ -94,7 +95,7 @@ extension VectorShape {
             @unknown default: break
             }
         }
-        self.init(id: id, segments: segments, ink: ink, evenOdd: evenOdd)
+        self.init(id: id, segments: segments, ink: ink, evenOdd: evenOdd, whiteIsKnockout: whiteIsKnockout)
     }
 }
 
@@ -129,7 +130,7 @@ public struct Pictogram: Identifiable {
         var lines = ""
         var masks: [String] = []
         for shape in shapes.sorted(by: { $0.id < $1.id }) {
-            if shape.ink.isNearlyWhite {
+            if shape.whiteIsKnockout && shape.ink.isNearlyWhite {
                 // White knockout paths erase previously painted content, and must stay
                 // transparent when the foreground is recolored. Later paint stays on top.
                 guard !lines.isEmpty else { continue }
